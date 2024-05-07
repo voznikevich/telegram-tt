@@ -76,7 +76,7 @@ const ChatList: FC<OwnProps> = ({
   const orderedIds = useFolderManagerForOrderedIds(resolvedFolderId) || [];
 
   useEffect(() => {
-    const managerEmail = "alexnikif42@gmail.com";
+    const managerEmail = "ovelchev@icloud.com";
     fetch(`https://clownfish-app-2-9c2hg.ondigitalocean.app/api/manager/${managerEmail}/chats`)
       .then(res => res.json())
       .then((data: string[]) => { // Визначення типу для параметра `data`
