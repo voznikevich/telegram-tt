@@ -1,29 +1,16 @@
 import type { FC } from '../../../lib/teact/teact';
-import React, {
-  memo, useEffect, useMemo, useRef, useState,
-} from '../../../lib/teact/teact';
+import React, {  memo, useEffect, useMemo, useRef, useState,} from '../../../lib/teact/teact';
 import { getActions } from '../../../global';
-
 import type { ApiSession } from '../../../api/types';
 import type { GlobalState } from '../../../global/types';
 import type { FolderEditDispatch } from '../../../hooks/reducers/useFoldersReducer';
 import type { SettingsScreens } from '../../../types';
 import { LeftColumnContent } from '../../../types';
-
-import {
-  ALL_FOLDER_ID,
-  ARCHIVE_MINIMIZED_HEIGHT,
-  ARCHIVED_FOLDER_ID,
-  CHAT_HEIGHT_PX,
-  CHAT_LIST_SLICE,
-  FRESH_AUTH_PERIOD,
-  SAVED_FOLDER_ID,
-} from '../../../config';
+import {  ALL_FOLDER_ID,  ARCHIVE_MINIMIZED_HEIGHT,  ARCHIVED_FOLDER_ID,  CHAT_HEIGHT_PX,  CHAT_LIST_SLICE,  FRESH_AUTH_PERIOD,  SAVED_FOLDER_ID,} from '../../../config';
 import buildClassName from '../../../util/buildClassName';
 import { getOrderKey, getPinnedChatsCount } from '../../../util/folderManager';
 import { getServerTime } from '../../../util/serverTime';
 import { IS_APP, IS_MAC_OS } from '../../../util/windowEnvironment';
-
 import usePeerStoriesPolling from '../../../hooks/polling/usePeerStoriesPolling';
 import useTopOverscroll from '../../../hooks/scroll/useTopOverscroll';
 import useDebouncedCallback from '../../../hooks/useDebouncedCallback';
@@ -33,7 +20,6 @@ import useInfiniteScroll from '../../../hooks/useInfiniteScroll';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
 import useLastCallback from '../../../hooks/useLastCallback';
 import useOrderDiff from './hooks/useOrderDiff';
-
 import InfiniteScroll from '../../ui/InfiniteScroll';
 import Loading from '../../ui/Loading';
 import Archive from './Archive';
@@ -72,13 +58,11 @@ const ChatList: FC<OwnProps> = ({
   onSettingsScreenSelect,
   onLeftColumnContentChange,
 }) => {
-  const {
-    openChat,
-    openNextChat,
-    closeForumPanel,
-    toggleStoryRibbon,
-  } = getActions();
-  // eslint-disable-next-line no-null/no-null
+  const [managerChatIds, setManagerChatIds] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  const { openChat, openNextChat, closeForumPanel, toggleStoryRibbon } = getActions();
+
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldIgnoreDragRef = useRef(false);
   const [unconfirmedSessionHeight, setUnconfirmedSessionHeight] = useState(0);
@@ -86,28 +70,46 @@ const ChatList: FC<OwnProps> = ({
   const isArchived = folderType === 'archived';
   const isAllFolder = folderType === 'all';
   const isSaved = folderType === 'saved';
-  const resolvedFolderId = (
-    isAllFolder ? ALL_FOLDER_ID : isArchived ? ARCHIVED_FOLDER_ID : isSaved ? SAVED_FOLDER_ID : folderId!
-  );
+  const resolvedFolderId = (isAllFolder ? ALL_FOLDER_ID : isArchived ? ARCHIVED_FOLDER_ID : isSaved ? SAVED_FOLDER_ID : folderId!);
 
   const shouldDisplayArchive = isAllFolder && canDisplayArchive && archiveSettings;
+  const orderedIds = useFolderManagerForOrderedIds(resolvedFolderId) || [];
 
-  const orderedIds = useFolderManagerForOrderedIds(resolvedFolderId);
-  usePeerStoriesPolling(orderedIds);
+  useEffect(() => {
+    const managerEmail = "voznikevicho@gmail.com";
+    fetch(`https://m1-kwfrx.ondigitalocean.app/api/manager/${managerEmail}/chats`)
+      .then(res => res.json())
+      .then((data: string[]) => { // Визначення типу для параметра `data`
+        const existingChatIds = new Set(orderedIds);
+        const filteredChatIds = data.filter((chatId: string) => existingChatIds.has(chatId)); // Визначення типу для параметра `chatId`
+        setManagerChatIds(filteredChatIds);
+        setLoading(false);
+      })
+      .catch(error => {
+        console.error('Failed to fetch manager chats', error);
+        setLoading(false);
+      });
+  }, [orderedIds]);
+  
 
-  const chatsHeight = (orderedIds?.length || 0) * CHAT_HEIGHT_PX;
-  const archiveHeight = shouldDisplayArchive
-    ? archiveSettings?.isMinimized ? ARCHIVE_MINIMIZED_HEIGHT : CHAT_HEIGHT_PX : 0;
+  const filteredOrderedIds = useMemo(() => {
+    return orderedIds.filter(id => managerChatIds.includes(id));
+  }, [orderedIds, managerChatIds]);
 
-  const { orderDiffById, getAnimationType } = useOrderDiff(orderedIds);
+  console.log(filteredOrderedIds);
+  usePeerStoriesPolling(filteredOrderedIds);
 
-  const [viewportIds, getMore] = useInfiniteScroll(undefined, orderedIds, undefined, CHAT_LIST_SLICE);
+  const chatsHeight = (filteredOrderedIds?.length || 0) * CHAT_HEIGHT_PX;
+  const archiveHeight = shouldDisplayArchive ? archiveSettings?.isMinimized ? ARCHIVE_MINIMIZED_HEIGHT : CHAT_HEIGHT_PX : 0;
+
+  const { orderDiffById, getAnimationType } = useOrderDiff(filteredOrderedIds);
+
+  const [viewportIds, getMore] = useInfiniteScroll(undefined, filteredOrderedIds, undefined, CHAT_LIST_SLICE);
 
   const shouldShowUnconfirmedSessions = useMemo(() => {
     const sessionsArray = Object.values(sessions || {});
     const current = sessionsArray.find((session) => session.isCurrent);
     if (!current || getServerTime() - current.dateCreated < FRESH_AUTH_PERIOD) return false;
-
     return isAllFolder && sessionsArray.some((session) => session.isUnconfirmed);
   }, [isAllFolder, sessions]);
 
@@ -115,8 +117,7 @@ const ChatList: FC<OwnProps> = ({
     if (!shouldShowUnconfirmedSessions) setUnconfirmedSessionHeight(0);
   }, [shouldShowUnconfirmedSessions]);
 
-  // Support <Alt>+<Up/Down> to navigate between chats
-  useHotkeys(isActive && orderedIds?.length ? {
+  useHotkeys(isActive && filteredOrderedIds?.length ? {
     'Alt+ArrowUp': (e: KeyboardEvent) => {
       e.preventDefault();
       openNextChat({ targetIndexDelta: -1, orderedIds });
@@ -127,9 +128,8 @@ const ChatList: FC<OwnProps> = ({
     },
   } : undefined);
 
-  // Support <Cmd>+<Digit> to navigate between chats
   useEffect(() => {
-    if (!isActive || isSaved || !orderedIds || !IS_APP) {
+    if (!isActive || isSaved || !filteredOrderedIds || !IS_APP) {
       return undefined;
     }
 
@@ -137,30 +137,24 @@ const ChatList: FC<OwnProps> = ({
       if (((IS_MAC_OS && e.metaKey) || (!IS_MAC_OS && e.ctrlKey)) && e.code.startsWith('Digit')) {
         const [, digit] = e.code.match(/Digit(\d)/) || [];
         if (!digit || RESERVED_HOTKEYS.has(digit)) return;
-
         const isArchiveInList = shouldDisplayArchive && archiveSettings && !archiveSettings.isMinimized;
-
         const shift = isArchiveInList ? -1 : 0;
         const position = Number(digit) + shift - 1;
-
         if (isArchiveInList && position === -1) {
           onLeftColumnContentChange?.(LeftColumnContent.Archived);
           return;
         }
-
-        if (position > orderedIds!.length - 1) return;
-
-        openChat({ id: orderedIds![position], shouldReplaceHistory: true });
+        if (position > filteredOrderedIds!.length - 1) return;
+        openChat({ id: filteredOrderedIds![position], shouldReplaceHistory: true });
       }
     }
 
     document.addEventListener('keydown', handleKeyDown);
-
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [
-    archiveSettings, isSaved, isActive, onLeftColumnContentChange, openChat, openNextChat, orderedIds,
+    archiveSettings, isSaved, isActive, onLeftColumnContentChange, openChat, openNextChat, filteredOrderedIds,
     shouldDisplayArchive,
   ]);
 
@@ -209,14 +203,14 @@ const ChatList: FC<OwnProps> = ({
   const renderedOverflowTrigger = useTopOverscroll(containerRef, handleShowStoryRibbon, handleHideStoryRibbon, isSaved);
 
   function renderChats() {
-    const viewportOffset = orderedIds!.indexOf(viewportIds![0]);
-
+    if (!viewportIds) {
+      return null; // Або якась інша логіка обробки відсутності viewportIds
+    }
+    const viewportOffset = filteredOrderedIds!.indexOf(viewportIds![0]);
     const pinnedCount = getPinnedChatsCount(resolvedFolderId) || 0;
-
     return viewportIds!.map((id, i) => {
       const isPinned = viewportOffset + i < pinnedCount;
       const offsetTop = unconfirmedSessionHeight + archiveHeight + (viewportOffset + i) * CHAT_HEIGHT_PX;
-
       return (
         <Chat
           key={id}
